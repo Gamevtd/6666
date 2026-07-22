@@ -1,0 +1,1 @@
+loadstring(game:HttpGet("https://gitee.com/Xingtaiduan/Script/raw/main/Loader.lua"))()
