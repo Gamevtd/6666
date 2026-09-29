@@ -1,0 +1,152 @@
+-- ============================================
+-- 自動刷怪 (Auto Farm)
+-- 自動尋怪 + 移動 + 全圖秒殺
+-- 基於 Cobalt 日誌: gunfire -> MonsterBox
+-- ============================================
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Players           = game:GetService("Players")
+local RunService        = game:GetService("RunService")
+local LocalPlayer       = Players.LocalPlayer
+
+local RemoteEvent    = ReplicatedStorage:WaitForChild("RemoteEvent")
+local MonstersFolder = workspace:WaitForChild("Game"):WaitForChild("Monsters")
+
+-- ================= 設定 =================
+local CONFIG = {
+    -- 攻擊
+    FireRate     = 0.05,   -- 射速（秒）
+    Jitter       = 0.01,   -- 隨機抖動
+    KillAll      = true,   -- true=全圖秒殺, false=只打最近
+
+    -- 移動
+    AutoMove     = true,   -- 是否自動移動到怪物
+    MoveDistance = 15,     -- 靠近到這個距離就停下
+    MoveSpeed    = 30,     -- 移動速度（WalkSpeed）
+
+    -- 安全
+    MaxIdleTime  = 3,      -- 找不到怪物多久後視為清空（秒）
+}
+
+-- ============ 取得怪物碰撞箱 ============
+local function getMonsterBox(monster)
+    local torso = monster:FindFirstChild("Torso")
+    if torso then
+        local box = torso:FindFirstChild("MonsterBox")
+        if box then return box end
+    end
+    return monster:FindFirstChild("MonsterBox")
+        or monster:FindFirstChild("Hitbox")
+        or monster:FindFirstChild("HumanoidRootPart")
+        or monster:FindFirstChild("Head")
+end
+
+-- ============ 判斷怪物是否活著 ============
+local function isAlive(monster)
+    local hum = monster:FindFirstChildOfClass("Humanoid")
+    if hum then return hum.Health > 0 end
+    return monster.Parent ~= nil
+end
+
+-- ============ 找最近怪物 ============
+local function getNearestMonster()
+    local myChar = LocalPlayer.Character
+    if not myChar then return nil end
+    local myPos = myChar:GetPivot().Position
+
+    local nearest, nearestDist = nil, math.huge
+    for _, monster in ipairs(MonstersFolder:GetChildren()) do
+        if isAlive(monster) then
+            local box = getMonsterBox(monster)
+            if box then
+                local d = (box.Position - myPos).Magnitude
+                if d < nearestDist then
+                    nearest, nearestDist = monster, d
+                end
+            end
+        end
+    end
+    return nearest, nearestDist
+end
+
+-- ============ 攻擊單一怪物 ============
+local function fireAt(monster)
+    local box = getMonsterBox(monster)
+    if not box then return end
+    pcall(function()
+        RemoteEvent:FireServer("gunfire", box, box.Position)
+    end)
+end
+
+-- ============ 全圖秒殺 ============
+local function killAll()
+    for _, monster in ipairs(MonstersFolder:GetChildren()) do
+        if isAlive(monster) then
+            fireAt(monster)
+        end
+    end
+end
+
+-- ============ 自動移動 ============
+local function moveTo(target)
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+    local hum = myChar:FindFirstChildOfClass("Humanoid")
+    if not hum then return end
+
+    local box = getMonsterBox(target)
+    if not box then return end
+
+    -- 設定移動速度
+    hum.WalkSpeed = CONFIG.MoveSpeed
+
+    -- 移動到怪物位置
+    hum:MoveTo(box.Position)
+end
+
+-- ============ 主循環 ============
+local running = true
+local lastTargetTime = os.clock()
+
+task.spawn(function()
+    while running do
+        local t0 = os.clock()
+
+        -- 1. 攻擊
+        if CONFIG.KillAll then
+            killAll()
+        else
+            local target = getNearestMonster()
+            if target then fireAt(target) end
+        end
+
+        -- 2. 移動
+        if CONFIG.AutoMove then
+            local target, dist = getNearestMonster()
+            if target then
+                lastTargetTime = os.clock()
+                if dist and dist > CONFIG.MoveDistance then
+                    moveTo(target)
+                end
+            else
+                -- 沒有怪物：停止移動
+                local myChar = LocalPlayer.Character
+                if myChar then
+                    local hum = myChar:FindFirstChildOfClass("Humanoid")
+                    if hum then hum:MoveTo(myChar:GetPivot().Position) end
+                end
+            end
+        end
+
+        -- 動態等待
+        local elapsed  = os.clock() - t0
+        local waitTime = CONFIG.FireRate - elapsed
+        if waitTime > 0 then
+            task.wait(waitTime + math.random() * CONFIG.Jitter)
+        else
+            task.wait()
+        end
+    end
+end)
+
+-- ============ 停止方式 ============
+-- 在指令列輸入： running = false
