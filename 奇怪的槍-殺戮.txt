@@ -1,0 +1,49 @@
+-- 概念示意，非可直接執行代碼
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local ShootEvent = RS.Events.Shoot
+local LP = Players.LocalPlayer
+
+-- 1. 取得最近的 Bot
+local function GetClosestBot()
+    local closest, minDist = nil, math.huge
+    local myPos = LP.Character.HumanoidRootPart.Position
+
+    for _, bot in ipairs(workspace.ServerBots:GetChildren()) do
+        local hum = bot:FindFirstChildOfClass("Humanoid")
+        local root = bot:FindFirstChild("HumanoidRootPart")
+        if hum and root and hum.Health > 0 then
+            local dist = (root.Position - myPos).Magnitude
+            if dist < minDist then
+                closest, minDist = bot, dist
+            end
+        end
+    end
+    return closest
+end
+
+-- 2. 自動射擊
+local function AutoShoot()
+    local gun = LP.Character:FindFirstChild("vip025928CustomGun_1")
+    if not gun then return end
+
+    local bot = GetClosestBot()
+    if not bot then return end
+
+    local hum = bot:FindFirstChildOfClass("Humanoid")
+    local root = bot:FindFirstChild("HumanoidRootPart")
+
+    ShootEvent:FireServer(
+        tick(),
+        gun,
+        CFrame.new(LP.Character.HumanoidRootPart.Position, root.Position),  -- 自動瞄準
+        false,
+        { ["1"] = { hum, true, true, 100 } }  -- 申報爆頭擊殺
+    )
+end
+
+-- 3. 循環執行
+while true do
+    AutoShoot()
+    task.wait(0)  -- 配合射速
+end

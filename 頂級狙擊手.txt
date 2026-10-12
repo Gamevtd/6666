@@ -1,0 +1,130 @@
+--============================================================
+-- 快速自動射擊所有敵人
+-- 核心: 偽造 RemoteEvent 1017 (命中事件)
+--============================================================
+
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+
+local LocalPlayer = Players.LocalPlayer
+local RemoteManager = ReplicatedStorage:WaitForChild("GameManager"):WaitForChild("RemoteManager")
+
+-- 從日誌確認的事件
+local HitEvent = RemoteManager:WaitForChild("1017")   -- 命中事件 (Outgoing)
+
+-- 設定
+local MY_WEAPON_ID  = 22000   -- 從日誌看到你的武器 ID
+local FIRE_RATE     = 0.01    -- 每 0.03 秒射一發 (可調更低)
+local AIM_HEAD      = true    -- 是否瞄準頭部
+local MAX_DISTANCE  = 2000    -- 最大射程
+
+--============================================================
+-- 收集所有敵人
+--============================================================
+local function getEnemies()
+    local list = {}
+    local myChar = LocalPlayer.Character
+    if not myChar then return list end
+    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return list end
+    local myPos = myHRP.Position
+
+    -- 玩家敵人
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+            local hrp = plr.Character:FindFirstChild("HumanoidRootPart")
+            if hum and hrp and hum.Health > 0 then
+                local d = (hrp.Position - myPos).Magnitude
+                if d <= MAX_DISTANCE then
+                    list[#list+1] = {char = plr.Character, hum = hum, root = hrp, dist = d}
+                end
+            end
+        end
+    end
+
+    -- Bot 敵人
+    local battleArea = workspace:FindFirstChild("BattleArea")
+    if battleArea then
+        local mapRoot = battleArea:FindFirstChild("MapRootModel")
+        local botFolder = mapRoot and mapRoot:FindFirstChild("BotFolder")
+        if botFolder then
+            for _, bot in ipairs(botFolder:GetChildren()) do
+                local hum = bot:FindFirstChildOfClass("Humanoid")
+                local hrp = bot:FindFirstChild("HumanoidRootPart")
+                if hum and hrp and hum.Health > 0 then
+                    local d = (hrp.Position - myPos).Magnitude
+                    if d <= MAX_DISTANCE then
+                        list[#list+1] = {char = bot, hum = hum, root = hrp, dist = d}
+                    end
+                end
+            end
+        end
+    end
+
+    table.sort(list, function(a, b) return a.dist < b.dist end)
+    return list
+end
+
+--============================================================
+-- 對單一敵人發射
+--============================================================
+local function shoot(enemy)
+    if not enemy or not enemy.hum or enemy.hum.Health <= 0 then return end
+    local myChar = LocalPlayer.Character
+    if not myChar then return end
+    local myHRP = myChar:FindFirstChild("HumanoidRootPart")
+    if not myHRP then return end
+
+    -- 瞄準部位
+    local part
+    if AIM_HEAD then
+        part = enemy.char:FindFirstChild("Head") or enemy.root
+    else
+        part = enemy.root
+    end
+    if not part then return end
+
+    -- 方向向量
+    local dir = (part.Position - myHRP.Position).Unit
+
+    -- 發送命中事件 (格式完全參照日誌)
+    HitEvent:FireServer({
+        {
+            instance = part,
+            normal = dir,
+            taggedHumanoid = enemy.hum,
+            position = part.Position
+        }
+    })
+end
+
+--============================================================
+-- 高速主循環
+--============================================================
+local running = true
+
+task.spawn(function()
+    while running do
+        local enemies = getEnemies()
+        for _, e in ipairs(enemies) do
+            if not running then break end
+            if e.hum.Health > 0 then
+                shoot(e)
+                task.wait(FIRE_RATE)
+            end
+        end
+        task.wait(FIRE_RATE)
+    end
+end)
+
+-- 控制指令
+_G.stopFire  = function() running = false; print("[AutoFire] 停止") end
+_G.startFire = function()
+    if not running then
+        running = true
+        print("[AutoFire] 啟動")
+    end
+end
+
+print("[AutoFire] 快速自動射擊已啟動 | 用 _G.stopFire() 停止")

@@ -1,0 +1,76 @@
+-- 概念框架，非可直接執行代碼
+local Players = game:GetService("Players")
+local RS = game:GetService("ReplicatedStorage")
+local LP = Players.LocalPlayer
+local ShootEvent = RS.Events.Shoot
+
+-- 設定
+local FIRE_RATE = 0.1      -- 配合射速
+local MAX_DISTANCE = 200   -- 最大攻擊距離
+local PRIORITIZE = "distance"  -- "distance" | "health"
+
+-- 1. 取得所有敵人
+local function GetAllEnemies()
+    local enemies = {}
+    for _, bot in ipairs(workspace.ServerBots:GetChildren()) do
+        table.insert(enemies, bot)
+    end
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LP and plr.Character then
+            table.insert(enemies, plr.Character)
+        end
+    end
+    return enemies
+end
+
+-- 2. 過濾有效目標
+local function IsValidTarget(model)
+    if not model or not model.Parent then return false end
+    local hum = model:FindFirstChildOfClass("Humanoid")
+    local root = model:FindFirstChild("HumanoidRootPart")
+    if not hum or not root or hum.Health <= 0 then return false end
+    return true, hum, root
+end
+
+-- 3. 排序
+local function SortTargets(enemies)
+    local myPos = LP.Character.HumanoidRootPart.Position
+    table.sort(enemies, function(a, b)
+        local aRoot = a:FindFirstChild("HumanoidRootPart")
+        local bRoot = b:FindFirstChild("HumanoidRootPart")
+        if not aRoot or not bRoot then return false end
+        return (aRoot.Position - myPos).Magnitude < (bRoot.Position - myPos).Magnitude
+    end)
+    return enemies
+end
+
+-- 4. 射擊
+local function FireAt(target, gun)
+    local valid, hum, root = IsValidTarget(target)
+    if not valid then return end
+    local myRoot = LP.Character.HumanoidRootPart
+    if (root.Position - myRoot.Position).Magnitude > MAX_DISTANCE then return end
+
+    ShootEvent:FireServer(
+        tick(),
+        gun,
+        CFrame.new(myRoot.Position, root.Position),
+        false,
+        { ["1"] = { hum, true, true, 100 } }
+    )
+end
+
+-- 5. 主循環
+task.spawn(function()
+    while task.wait(FIRE_RATE) do
+        if not LP.Character then continue end
+        local gun = LP.Character:FindFirstChild("vip025928CustomGun_1")
+            or LP.Character:FindFirstChild("vip025928CustomGun_2")
+        if not gun then continue end
+
+        local enemies = SortTargets(GetAllEnemies())
+        for _, enemy in ipairs(enemies) do
+            FireAt(enemy, gun)
+        end
+    end
+end)
