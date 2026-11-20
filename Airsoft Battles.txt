@@ -1,0 +1,237 @@
+--[[
+	WARNING: Heads up! This script has not been verified by ScriptBlox. Use at your own risk!
+]]
+-- Services
+local playersService = game:GetService("Players")
+local replicatedStorage = game:GetService("ReplicatedStorage")
+local acsEngine = replicatedStorage:WaitForChild("ACS_Engine", 9e9)
+local eventsFolder = acsEngine and acsEngine:WaitForChild("Events", 9e9)
+local damageEvent = eventsFolder and eventsFolder:WaitForChild("Damage", 9e9)
+
+-- Pre-fetch static data
+local origin = Vector3.new(-272.4232177734375, -14.307608604431152, -23.735084533691406)
+local weaponName = "USP"
+local bulletIDPrefix = "unique_bullet_id_"
+
+-- Cache args template to avoid creating it repeatedly
+local argsTemplate = {
+    [1] = {
+        origin = origin,
+        weaponName = weaponName,
+        bulletID = nil, -- To be set dynamically
+        currentPenetrationCount = 1,
+        shellSpeed = 9999999,
+        maxPenetrationCount = 99999,
+        registeredParts = {},
+        penetrationMultiplier = 0.8,
+        shellType = "Bullet",
+        shellMaxDist = 89999,
+        filterDescendants = {},
+    },
+    [2] = nil, -- humanoid target
+    [3] = 154.2140350341797, -- Distance value
+    [4] = 2, -- Additional parameter
+    [5] = nil, -- Head part target
+}
+
+-- Pre-fetch common checks outside of the loop
+local function getTargetData(playerModel)
+    local humanoid = playerModel:FindFirstChild("Humanoid")
+    local head = playerModel:FindFirstChild("Head") -- Look for the Head part
+
+    if humanoid and head then
+        return humanoid, head -- Return the humanoid and Head part
+    end
+end
+
+-- Function to handle targeting logic
+local function handleTarget(playerModel)
+    -- Fetch humanoid and head references
+    local humanoid, head = getTargetData(playerModel)
+    if not humanoid then return end -- Skip if no humanoid found
+
+    -- Set dynamic values for args
+    argsTemplate[1].bulletID = bulletIDPrefix .. tostring(math.random())  -- Unique bullet ID
+    argsTemplate[2] = humanoid -- Target the player's humanoid
+    argsTemplate[5] = head -- Target the Head part
+    argsTemplate[1].registeredParts[head] = true -- Register the Head part
+
+    -- Invoke the damage event for this player
+    damageEvent:InvokeServer(unpack(argsTemplate))
+end
+
+-- Function to process all players asynchronously
+local function processAllPlayersAsync()
+    -- Process Players Service
+    local players = playersService:GetPlayers()
+    for i = 1, #players do
+        local player = players[i]
+        if player.Character then
+            task.spawn(function()
+                handleTarget(player.Character)
+            end)
+        end
+    end
+
+    -- Process Players Folder (FPlayers)
+    local playersFolder = game:GetService("Workspace"):FindFirstChild("FPlayers")
+    if playersFolder then
+        local playerModels = playersFolder:GetChildren()
+        for i = 1, #playerModels do
+            task.spawn(function()
+                handleTarget(playerModels[i])
+            end)
+        end
+    end
+end
+
+-- GUI setup
+local screenGui = Instance.new("ScreenGui")
+screenGui.Parent = game.Players.LocalPlayer:WaitForChild("PlayerGui")
+
+-- Create a draggable frame with rounded corners and an outline
+local frame = Instance.new("Frame")
+frame.Size = UDim2.new(0, 200, 0, 150)  -- Smaller size for the frame
+frame.Position = UDim2.new(0.5, -100, 0.5, -75)  -- Centered on screen
+frame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)  -- Dark gray background
+frame.BackgroundTransparency = 0.2  -- Slight transparency for sleek look
+frame.BorderSizePixel = 2  -- Outline border size
+frame.BorderColor3 = Color3.fromRGB(255, 255, 255)  -- White border color
+frame.AnchorPoint = Vector2.new(0.5, 0.5)  -- Anchor at the center
+frame.Parent = screenGui
+
+-- Add rounded corners to the frame
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 12)  -- Rounded corners
+corner.Parent = frame
+
+-- Create the "Kill All" button
+local killAllButton = Instance.new("TextButton")
+killAllButton.Size = UDim2.new(0, 180, 0, 28)  -- Smaller button
+killAllButton.Position = UDim2.new(0.5, -90, 0.1, 5)  -- Adjusted position
+killAllButton.Text = "Kill Lobby"
+killAllButton.Parent = frame
+
+-- Kill All button style
+killAllButton.BackgroundColor3 = Color3.fromRGB(80, 80, 80)
+killAllButton.BackgroundTransparency = 0.3
+killAllButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+killAllButton.TextSize = 14  -- Smaller text size
+killAllButton.TextStrokeTransparency = 0.6
+killAllButton.Font = Enum.Font.GothamBold
+killAllButton.AutoButtonColor = false
+killAllButton.BorderSizePixel = 0  -- No border around the button
+
+-- Add rounded corners to the "Kill All" button
+local killAllCorner = Instance.new("UICorner")
+killAllCorner.CornerRadius = UDim.new(0, 8)  -- Rounded corners for the "Kill All" button
+killAllCorner.Parent = killAllButton
+
+-- Create the "Start Kill Loop" toggle button (also round)
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 180, 0, 28)  -- Smaller button
+toggleButton.Position = UDim2.new(0.5, -90, 0.4, 5)  -- Adjusted position
+toggleButton.Text = "Spam Kill"
+toggleButton.Parent = frame
+
+-- Toggle button style (same as Kill All button)
+toggleButton.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+toggleButton.BackgroundTransparency = 0.3
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.TextSize = 14  -- Smaller text size
+toggleButton.TextStrokeTransparency = 0.6
+toggleButton.Font = Enum.Font.GothamBold
+toggleButton.AutoButtonColor = false
+toggleButton.BorderSizePixel = 0  -- No border
+
+-- Add rounded corners to the "Start Kill Loop" button
+local toggleButtonCorner = Instance.new("UICorner")
+toggleButtonCorner.CornerRadius = UDim.new(0, 8)  -- Rounded corners for the "Start Kill Loop" button
+toggleButtonCorner.Parent = toggleButton
+
+local toggleActive = false  -- To track the toggle state
+
+-- Function to toggle kill loop
+local function toggleKillLoop()
+    toggleActive = not toggleActive
+    if toggleActive then
+        toggleButton.Text = "Stop Kill Spam"
+        while toggleActive do
+            processAllPlayersAsync()  -- Process all players
+            wait(0.01)  -- Reduced delay to make the loop even faster (100ms)
+        end
+    else
+        toggleButton.Text = "Spam Kill"
+    end
+end
+
+-- Toggle button click event
+toggleButton.MouseButton1Click:Connect(toggleKillLoop)
+
+-- Create the FPS label in the top left corner
+local fpsLabel = Instance.new("TextLabel")
+fpsLabel.Size = UDim2.new(0, 200, 0, 30)
+fpsLabel.Position = UDim2.new(0, 10, 0, 10)  -- Positioned in the top left corner
+fpsLabel.Text = "stellar.wave | fps: 0"
+fpsLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+fpsLabel.BackgroundTransparency = 1
+fpsLabel.TextSize = 14
+fpsLabel.Font = Enum.Font.GothamBold
+fpsLabel.TextStrokeTransparency = 0.5
+fpsLabel.Parent = screenGui
+
+-- Update the FPS value using RunService for more accurate FPS
+local function updateFPS()
+    local runService = game:GetService("RunService")
+    local frameCount = 0
+    local lastTime = tick()
+
+    runService.Heartbeat:Connect(function()
+        frameCount = frameCount + 1
+        local deltaTime = tick() - lastTime
+        if deltaTime >= 1 then
+            local fps = math.floor(frameCount / deltaTime)
+            fpsLabel.Text = "stellar.wave | fps: " .. fps
+            frameCount = 0
+            lastTime = tick()
+        end
+    end)
+end
+
+-- Start the FPS update loop
+updateFPS()
+
+-- Function to make the frame draggable (mobile support)
+local dragging = false
+local dragStart = nil
+local startPos = nil
+
+local function onDragInputBegan(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = frame.Position
+    end
+end
+
+local function onDragInputChanged(input)
+    if dragging then
+        local delta = input.Position - dragStart
+        frame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end
+
+local function onDragInputEnded(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = false
+    end
+end
+
+frame.InputBegan:Connect(onDragInputBegan)
+frame.InputChanged:Connect(onDragInputChanged)
+frame.InputEnded:Connect(onDragInputEnded)
+
+-- Kill all button logic
+killAllButton.MouseButton1Click:Connect(function()
+    processAllPlayersAsync()
+end)
